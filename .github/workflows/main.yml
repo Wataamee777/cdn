@@ -1,0 +1,101 @@
+name: Generate index, sitemap, ogp
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate index.html & sitemap.xml
+        run: |
+          set -e
+
+          BASE_URL="https://cdn.wata777.f5.si"
+          SITEMAP="sitemap.xml"
+
+          EXCLUDE_DIRS=(
+            "./.git"
+            "./.github"
+            "./node_modules"
+          )
+
+          is_excluded () {
+            for d in "${EXCLUDE_DIRS[@]}"; do
+              [[ "$1" == "$d"* ]] && return 0
+            done
+            return 1
+          }
+
+          echo '<?xml version="1.0" encoding="UTF-8"?>' > "$SITEMAP"
+          echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' >> "$SITEMAP"
+
+          find . -type d | while read dir; do
+            is_excluded "$dir" && continue
+
+            INDEX="$dir/index.html"
+            REL="${dir#./}"
+            [ "$REL" = "" ] && REL="/"
+
+            TITLE_NAME="$(basename "$dir")"
+            [ "$TITLE_NAME" = "." ] && TITLE_NAME="home"
+            TITLE="${TITLE_NAME} - cdn"
+
+            URL_PATH="${REL#/}"
+            PAGE_URL="$BASE_URL/$URL_PATH"
+            PAGE_URL="${PAGE_URL%/}/"
+
+            if [ ! -f "$INDEX" ]; then
+              cat <<EOF > "$INDEX"
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>$TITLE</title>
+
+  <!-- OGP -->
+  <meta property="og:title" content="$TITLE">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="$PAGE_URL">
+  <meta property="og:site_name" content="cdn">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+</head>
+<body>
+  <h1>$TITLE</h1>
+  <ul>
+EOF
+
+              find "$dir" -maxdepth 1 -mindepth 1 | while read item; do
+                name="$(basename "$item")"
+                if [ -d "$item" ]; then
+                  echo "    <li><a href=\"./$name/\">$name/</a></li>" >> "$INDEX"
+                else
+                  echo "    <li><a href=\"./$name\">$name</a></li>" >> "$INDEX"
+                fi
+              done
+
+              cat <<EOF >> "$INDEX"
+  </ul>
+</body>
+</html>
+EOF
+            fi
+
+            echo "  <url><loc>$PAGE_URL</loc></url>" >> "$SITEMAP"
+          done
+
+          echo '</urlset>' >> "$SITEMAP"
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --cached --quiet || git commit -m "auto: generate index, ogp, sitemap"
+          git push
