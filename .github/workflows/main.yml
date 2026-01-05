@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Generate index.html & sitemap.xml
+        shell: bash
         run: |
           set -e
 
@@ -25,7 +26,7 @@ jobs:
             "./node_modules"
           )
 
-          is_excluded () {
+          is_excluded() {
             for d in "${EXCLUDE_DIRS[@]}"; do
               [[ "$1" == "$d"* ]] && return 0
             done
@@ -35,60 +36,58 @@ jobs:
           echo '<?xml version="1.0" encoding="UTF-8"?>' > "$SITEMAP"
           echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' >> "$SITEMAP"
 
-          find . -type d | while read dir; do
+          while IFS= read -r dir; do
             is_excluded "$dir" && continue
 
             INDEX="$dir/index.html"
             REL="${dir#./}"
             [ "$REL" = "" ] && REL="/"
 
-            TITLE_NAME="$(basename "$dir")"
-            [ "$TITLE_NAME" = "." ] && TITLE_NAME="home"
-            TITLE="${TITLE_NAME} - cdn"
+            NAME="$(basename "$dir")"
+            [ "$NAME" = "." ] && NAME="home"
+            TITLE="${NAME} - cdn"
 
             URL_PATH="${REL#/}"
             PAGE_URL="$BASE_URL/$URL_PATH"
             PAGE_URL="${PAGE_URL%/}/"
 
             if [ ! -f "$INDEX" ]; then
-              cat <<EOF > "$INDEX"
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <title>$TITLE</title>
+              {
+                echo '<!DOCTYPE html>'
+                echo '<html lang="ja">'
+                echo '<head>'
+                echo '  <meta charset="UTF-8">'
+                echo "  <title>$TITLE</title>"
+                echo '  <meta property="og:type" content="website">'
+                echo "  <meta property=\"og:title\" content=\"$TITLE\">"
+                echo "  <meta property=\"og:url\" content=\"$PAGE_URL\">"
+                echo '  <meta property="og:site_name" content="cdn">'
+                echo '  <meta name="viewport" content="width=device-width, initial-scale=1">'
+                echo '</head>'
+                echo '<body>'
+                echo "  <h1>$TITLE</h1>"
+                echo '  <ul>'
+              } > "$INDEX"
 
-  <!-- OGP -->
-  <meta property="og:title" content="$TITLE">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="$PAGE_URL">
-  <meta property="og:site_name" content="cdn">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-
-</head>
-<body>
-  <h1>$TITLE</h1>
-  <ul>
-EOF
-
-              find "$dir" -maxdepth 1 -mindepth 1 | while read item; do
+              while IFS= read -r item; do
                 name="$(basename "$item")"
                 if [ -d "$item" ]; then
                   echo "    <li><a href=\"./$name/\">$name/</a></li>" >> "$INDEX"
                 else
                   echo "    <li><a href=\"./$name\">$name</a></li>" >> "$INDEX"
                 fi
-              done
+              done < <(find "$dir" -maxdepth 1 -mindepth 1)
 
-              cat <<EOF >> "$INDEX"
-  </ul>
-</body>
-</html>
-EOF
+              {
+                echo '  </ul>'
+                echo '</body>'
+                echo '</html>'
+              } >> "$INDEX"
             fi
 
             echo "  <url><loc>$PAGE_URL</loc></url>" >> "$SITEMAP"
-          done
+
+          done < <(find . -type d)
 
           echo '</urlset>' >> "$SITEMAP"
 
